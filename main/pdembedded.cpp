@@ -1,8 +1,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "drivers/uda1334a/uda1334a.h"
-#include "c/HeavyContextInterface.hpp"
-#include "c/Heavy_heavy.h"
+#include "../.main/output/c/HeavyContextInterface.hpp"
+#include "../.main/output/c/Heavy_heavy.h"
 
 static UDA1334A dac;
 static constexpr int SR = 48000;

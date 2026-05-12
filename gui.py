@@ -35,31 +35,27 @@ class EmbeddedProjectGUI:
         button_frame = ctk.CTkFrame(self.root)
         button_frame.pack(pady=10, padx=10, fill="x")
         
-        self.build_btn = ctk.CTkButton(
+        self.build_flash_btn = ctk.CTkButton(
             button_frame,
-            text="Build",
-            command=self.run_build,
+            text="Build and Flash",
+            command=self.run_build_and_flash,
             height=40,
             font=ctk.CTkFont(size=12)
         )
-        self.build_btn.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        
-        self.flash_btn = ctk.CTkButton(
-            button_frame,
-            text="Flash",
-            command=self.run_flash,
-            height=40,
-            font=ctk.CTkFont(size=12)
+        self.build_flash_btn.pack(padx=5, pady=5, fill="x")
+    
+    def run_build_and_flash(self):
+        """Run build and flash sequentially"""
+        subprocess.Popen(
+            "rm -rf ./main/output && hvcc ./main/test.pd -o .main/output && idf.py build && idf.py flash",
+            cwd=self.project_path,
+            shell=True
         )
-        self.flash_btn.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        
-        button_frame.grid_columnconfigure(0, weight=1)
-        button_frame.grid_columnconfigure(1, weight=1)
     
     def run_build(self):
         """Run idf.py build"""
         subprocess.Popen(
-            "idf.py build",
+            "rm -rf ./main/output && hvcc ./main/test.pd -o .main/output && idf.py build",
             cwd=self.project_path,
             shell=True
         )

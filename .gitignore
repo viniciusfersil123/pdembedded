@@ -2,6 +2,8 @@
 # ESP-IDF build folder
 build/
 **/build/
+output/
+**/output/
 
 # Binaries and maps
 *.bin
