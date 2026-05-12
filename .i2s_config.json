@@ -1,0 +1,5 @@
+{
+  "bclk_pin": 27,
+  "ws_pin": 26,
+  "dout_pin": 25
+}

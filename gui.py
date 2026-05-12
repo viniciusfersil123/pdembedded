@@ -8,7 +8,9 @@ import subprocess
 import os
 import threading
 import shlex
+import json
 from tkinter import filedialog
+from config_generator import I2SConfigGenerator, create_default_config
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -18,12 +20,20 @@ class EmbeddedProjectGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Pdembedded")
-        self.root.geometry("700x420")
+        self.root.geometry("800x650")
         
         self.project_path = os.path.dirname(os.path.abspath(__file__))
         self._selected_patch_store = os.path.join(self.project_path, ".selected_patch")
+        self._i2s_config_store = os.path.join(self.project_path, ".i2s_config.json")
+        # Available I2S pins for ESP32 WROOM (avoid strapping pins 0, 2 and flash pins 6-11)
+        self.available_pins = [4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33]
+        self.selected_pins = {}
+        self.pin_combos = {}
+
         self.patch_path = self.load_selected_patch()
+        self.i2s_config = self.load_i2s_config()
         self.current_process = None
+        
         self.setup_ui()
     
     def setup_ui(self):
@@ -39,10 +49,68 @@ class EmbeddedProjectGUI:
         select_patch_btn = ctk.CTkButton(patch_frame, text="Select Patch", command=self.select_patch, height=30)
         select_patch_btn.pack(side="right", padx=4)
 
+        # I2S Configuration Frame
+        i2s_frame = ctk.CTkFrame(self.root)
+        i2s_frame.pack(padx=10, pady=(0, 10), fill="x")
+
+        i2s_label = ctk.CTkLabel(i2s_frame, text="I2S Configuration (ESP32 WROOM)", font=ctk.CTkFont(size=11, weight="bold"))
+        i2s_label.pack(anchor="w", pady=(5, 8))
+
+        pins_frame = ctk.CTkFrame(i2s_frame)
+        pins_frame.pack(fill="x", pady=(0, 8))
+
+        # BCLK Pin
+        ctk.CTkLabel(pins_frame, text="BCLK Pin:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.bclk_combo = ctk.CTkComboBox(
+            pins_frame, 
+            values=[str(p) for p in self.available_pins],
+            command=lambda v: self._on_pin_selected("bclk", v),
+            width=80,
+            state="readonly"
+        )
+        self.bclk_combo.set(str(self.i2s_config.get('bclk_pin', 27)))
+        self.bclk_combo.grid(row=0, column=1, padx=5, pady=5)
+
+        # WS Pin
+        ctk.CTkLabel(pins_frame, text="WS Pin:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.ws_combo = ctk.CTkComboBox(
+            pins_frame, 
+            values=[str(p) for p in self.available_pins],
+            command=lambda v: self._on_pin_selected("ws", v),
+            width=80,
+            state="readonly"
+        )
+        self.ws_combo.set(str(self.i2s_config.get('ws_pin', 26)))
+        self.ws_combo.grid(row=0, column=3, padx=5, pady=5)
+
+        # DOUT Pin
+        ctk.CTkLabel(pins_frame, text="DOUT Pin:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.dout_combo = ctk.CTkComboBox(
+            pins_frame, 
+            values=[str(p) for p in self.available_pins],
+            command=lambda v: self._on_pin_selected("dout", v),
+            width=80,
+            state="readonly"
+        )
+        self.dout_combo.set(str(self.i2s_config.get('dout_pin', 25)))
+        self.dout_combo.grid(row=0, column=5, padx=5, pady=5)
+
+        self.pin_combos = {
+            "bclk": self.bclk_combo,
+            "ws": self.ws_combo,
+            "dout": self.dout_combo,
+        }
+        self.selected_pins = {
+            "bclk": int(self.i2s_config.get('bclk_pin', 27)),
+            "ws": int(self.i2s_config.get('ws_pin', 26)),
+            "dout": int(self.i2s_config.get('dout_pin', 25)),
+        }
+        self._update_pin_options()
+
         # Terminal output area (middle)
         self.log_box = ctk.CTkTextbox(self.root, height=260)
         self.log_box.pack(padx=10, pady=(0, 10), fill="both", expand=True)
-        self.log_box.insert("end", "Ready. Click 'Build and Flash' to start.\n")
+        self.log_box.insert("end", "Ready. I2S config will be auto-generated before build.\n")
         self.log_box.configure(state="disabled")
 
         # Buttons frame (appear after terminal)
@@ -94,6 +162,96 @@ class EmbeddedProjectGUI:
             self.save_selected_patch(selected)
             self.patch_file_label.configure(text=self.patch_path)
 
+    def load_i2s_config(self):
+        """Load I2S configuration from JSON file or return defaults"""
+        try:
+            if os.path.exists(self._i2s_config_store):
+                with open(self._i2s_config_store, "r", encoding="utf-8") as f:
+                    return self._normalize_pin_config(json.load(f))
+        except Exception:
+            pass
+        return self._normalize_pin_config(create_default_config())
+
+    def _normalize_pin_config(self, config):
+        defaults = create_default_config()
+        normalized = {}
+        used_pins = set()
+
+        for key in ("bclk_pin", "ws_pin", "dout_pin"):
+            pin = int(config.get(key, defaults[key]))
+            if pin not in self.available_pins or pin in used_pins:
+                pin = next(candidate for candidate in self.available_pins if candidate not in used_pins)
+            normalized[key] = pin
+            used_pins.add(pin)
+
+        return normalized
+
+    def save_i2s_config(self):
+        """Save current I2S configuration to JSON file"""
+        try:
+            config = {
+                'bclk_pin': int(self.bclk_combo.get()),
+                'ws_pin': int(self.ws_combo.get()),
+                'dout_pin': int(self.dout_combo.get())
+            }
+            with open(self._i2s_config_store, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            self.i2s_config = config
+            return True
+        except Exception as e:
+            self.append_log(f"Error saving I2S config: {e}\n")
+            return False
+
+    def _on_pin_selected(self, pin_type, value):
+        """Handle pin selection by removing the pin from other dropdowns"""
+        if value:
+            desired_pin = int(value)
+            used_pins = {
+                pin
+                for other_type, pin in self.selected_pins.items()
+                if other_type != pin_type
+            }
+
+            if desired_pin in used_pins:
+                desired_pin = next(
+                    candidate
+                    for candidate in self.available_pins
+                    if candidate not in used_pins
+                )
+
+            self.selected_pins[pin_type] = desired_pin
+            self.pin_combos[pin_type].set(str(desired_pin))
+            self._update_pin_options()
+
+    def _update_pin_options(self):
+        for pin_type, combo in self.pin_combos.items():
+            current_pin = self.selected_pins.get(pin_type)
+            available_values = [
+                str(pin)
+                for pin in self.available_pins
+                if pin == current_pin or pin not in self.selected_pins.values()
+            ]
+            combo.configure(values=available_values)
+            if current_pin is not None:
+                combo.set(str(current_pin))
+
+    def generate_i2s_config(self):
+        """Generate I2S configuration header from current settings"""
+        if not self.save_i2s_config():
+            return
+
+        try:
+            template_dir = os.path.join(self.project_path, 'templates')
+            output_file = os.path.join(self.project_path, 'build', 'config', 'i2s_config.h')
+            
+            generator = I2SConfigGenerator(template_dir)
+            if generator.write_config(self.i2s_config, output_file):
+                self.append_log(f"✓ Generated I2S config: build/config/i2s_config.h\n")
+            else:
+                self.append_log("✗ Failed to generate I2S config\n")
+        except Exception as e:
+            self.append_log(f"Error generating I2S config: {e}\n")
+
     def _run_command_worker(self, cmd):
         try:
             self.current_process = subprocess.Popen(
@@ -124,12 +282,17 @@ class EmbeddedProjectGUI:
             self.append_log("A process is already running.\n")
             return
 
+        # Generate I2S config first (automatically)
+        self.generate_i2s_config()
+
         self.build_flash_btn.configure(state="disabled")
         self.append_log("\n=== Build and Flash started ===\n")
 
         patch = self.patch_path or os.path.join(self.project_path, "main", "test.pd")
         patch_quoted = shlex.quote(patch)
-        cmd = f"rm -rf ./main/output && hvcc {patch_quoted} -o .main/output && idf.py build && idf.py flash"
+        # Source ESP-IDF environment before running build commands
+        esp_idf_path = os.path.expanduser("~/esp/esp-idf")
+        cmd = f"export IDF_PATH={esp_idf_path} && . $IDF_PATH/export.sh && rm -rf ./main/output && hvcc {patch_quoted} -o ./main/output && idf.py build && idf.py flash"
         threading.Thread(target=self._run_command_worker, args=(cmd,), daemon=True).start()
     
     def run_build(self):

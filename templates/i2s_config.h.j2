@@ -1,0 +1,35 @@
+#ifndef I2S_CONFIG_H
+#define I2S_CONFIG_H
+
+#include "driver/gpio.h"
+
+/**
+ * @brief Auto-generated I2S configuration from GUI
+ * Generated at: {{ timestamp }}
+ */
+
+// I2S Pin Configuration
+#define I2S_BCLK_PIN GPIO_NUM_{{ bclk_pin }}
+#define I2S_WS_PIN GPIO_NUM_{{ ws_pin }}
+#define I2S_DOUT_PIN GPIO_NUM_{{ dout_pin }}
+
+// I2S Parameters
+#define I2S_BLOCK_SIZE 64
+
+/**
+ * @brief Initialize I2S with configured pins
+ * @param dac Reference to UDA1334A driver instance
+ * @param sample_rate Audio sample rate to configure on the DAC
+ * @return ESP error code
+ */
+inline esp_err_t init_i2s_config(UDA1334A& dac, double sample_rate)
+{
+    return dac.begin(
+        static_cast<uint32_t>(sample_rate),
+        I2S_BCLK_PIN,
+        I2S_WS_PIN,
+        I2S_DOUT_PIN
+    );
+}
+
+#endif // I2S_CONFIG_H
