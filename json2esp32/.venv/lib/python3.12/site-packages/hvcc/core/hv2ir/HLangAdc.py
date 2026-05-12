@@ -1,0 +1,62 @@
+# Copyright (C) 2014-2018 Enzien Audio, Ltd.
+# Copyright (C) 2023-2024 Wasted Audio
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from typing import Optional, Dict
+
+from .HeavyIrObject import HeavyIrObject
+from .HeavyLangObject import HeavyLangObject
+from .HeavyGraph import HeavyGraph
+
+from hvcc.types.Lang import LangLetType
+
+
+class HLangAdc(HeavyLangObject):
+    """ adc
+    """
+
+    def __init__(
+        self,
+        obj_type: str,
+        args: Dict,
+        graph: 'HeavyGraph',
+        annotations: Optional[Dict] = None
+    ) -> None:
+        assert obj_type == "adc"
+        super().__init__(obj_type, args, graph,
+                         num_inlets=0,
+                         num_outlets=len(args[self._HEAVY_LANG_DICT[obj_type].args[0].name]),
+                         annotations=annotations)
+
+    def _resolved_outlet_type(self, outlet_index: int = 0) -> LangLetType:
+        return "~f>"
+
+    def reduce(self) -> tuple:
+        objects = set()
+        connections = []
+
+        # reduce a HeavyLang adc to a number of individual HeavyIR __inlet objects
+        for i, channel_index in enumerate(self.args["channels"]):
+            if len(self.outlet_connections[i]) > 0:  # if there are any connections to this inlet
+                x = HeavyIrObject("__inlet", args={
+                    "index": 127 + channel_index
+                })
+                x.outlet_buffers[0] = ("input", channel_index - 1)  # channel indicies are one-indexed
+                objects.add(x)
+
+                for c in self.outlet_connections[i]:
+                    connections.append((c, [c.copy(from_object=x, outlet_index=0)]))
+
+        return (objects, connections)

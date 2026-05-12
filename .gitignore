@@ -1,0 +1,16 @@
+# Ignore build outputs and IDE/project caches
+# ESP-IDF build folder
+build/
+**/build/
+
+# Binaries and maps
+*.bin
+*.elf
+*.map
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
