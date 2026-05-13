@@ -3,6 +3,55 @@
 Minimal CustomTkinter GUI for ESP32 project management
 """
 
+# Attempt to activate a local virtualenv early so top-level imports use it
+import atexit
+import os
+_venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv")
+_venv_bin = os.path.join(_venv_path, "bin")
+_venv_old_path = None
+_venv_old_virtual_env = None
+_venv_activated = False
+try:
+    if os.path.isdir(_venv_bin):
+        _venv_old_path = os.environ.get("PATH")
+        _venv_old_virtual_env = os.environ.get("VIRTUAL_ENV")
+        os.environ["PATH"] = _venv_bin + os.pathsep + (_venv_old_path or "")
+        os.environ["VIRTUAL_ENV"] = _venv_path
+        _venv_activated = True
+except Exception:
+    _venv_activated = False
+
+def _deactivate_module_venv():
+    global _venv_activated
+    try:
+        if not _venv_activated:
+            return
+        if _venv_old_path is not None:
+            os.environ["PATH"] = _venv_old_path
+        else:
+            parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p != _venv_bin]
+            os.environ["PATH"] = os.pathsep.join(parts)
+        if _venv_old_virtual_env is not None:
+            os.environ["VIRTUAL_ENV"] = _venv_old_virtual_env
+        else:
+            os.environ.pop("VIRTUAL_ENV", None)
+        _venv_activated = False
+    except Exception:
+        pass
+
+atexit.register(_deactivate_module_venv)
+
+import sys
+import site as _site
+
+# If the venv contains site-packages, add it to this interpreter's sys.path
+try:
+    _venv_site = os.path.join(_venv_path, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages")
+    if os.path.isdir(_venv_site):
+        _site.addsitedir(_venv_site)
+except Exception:
+    pass
+
 import customtkinter as ctk
 import subprocess
 import os
@@ -34,7 +83,18 @@ class EmbeddedProjectGUI:
         self.i2s_config = self.load_i2s_config()
         self.current_process = None
         
+        # venv handling
+        self.venv_path = os.path.join(self.project_path, "venv")
+        self._venv_active = False
+        self._old_path = None
+        self._old_virtual_env = None
+
         self.setup_ui()
+
+        # Activate project virtualenv (if present) and ensure we deactivate on close
+        if os.environ.get("VIRTUAL_ENV") != self.venv_path:
+            self.activate_venv()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
     
     def setup_ui(self):
         """Setup minimal UI"""
@@ -131,6 +191,63 @@ class EmbeddedProjectGUI:
         self.log_box.insert("end", text)
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
+
+    def activate_venv(self):
+        """Activate a local virtualenv by updating environment vars for subprocesses."""
+        try:
+            bin_dir = os.path.join(self.venv_path, "bin")
+            if os.path.isdir(bin_dir):
+                self._old_path = os.environ.get("PATH")
+                self._old_virtual_env = os.environ.get("VIRTUAL_ENV")
+                os.environ["PATH"] = bin_dir + os.pathsep + (self._old_path or "")
+                os.environ["VIRTUAL_ENV"] = self.venv_path
+                self._venv_active = True
+                self.append_log(f"Activated virtualenv: {self.venv_path}\n")
+            else:
+                self.append_log("No virtualenv found at ./venv — continuing without venv.\n")
+        except Exception as e:
+            self.append_log(f"Error activating venv: {e}\n")
+
+    def deactivate_venv(self):
+        """Restore environment to pre-venv state."""
+        try:
+            if not self._venv_active:
+                return
+            # restore PATH
+            if self._old_path is not None:
+                os.environ["PATH"] = self._old_path
+            else:
+                prefix = os.path.join(self.venv_path, "bin")
+                parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p != prefix]
+                os.environ["PATH"] = os.pathsep.join(parts)
+
+            # restore VIRTUAL_ENV
+            if self._old_virtual_env is not None:
+                os.environ["VIRTUAL_ENV"] = self._old_virtual_env
+            else:
+                os.environ.pop("VIRTUAL_ENV", None)
+
+            self._venv_active = False
+            self.append_log(f"Deactivated virtualenv: {self.venv_path}\n")
+        except Exception as e:
+            self.append_log(f"Error deactivating venv: {e}\n")
+
+    def _on_close(self):
+        """Called when the GUI is closing: deactivate venv then destroy root."""
+        try:
+            self.append_log("\nShutting down...\n")
+            # If a build/flash process is running, try to terminate it first
+            if self.current_process is not None:
+                try:
+                    self.current_process.terminate()
+                except Exception:
+                    pass
+            self.deactivate_venv()
+        finally:
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
 
     def load_selected_patch(self):
         try:
