@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 // Avoid libDaisy dependency: use simple types
-// Enable ESP32 ADC API usage when building for ESP-IDF
+// Enable ESP32 ADC oneshot API when building for ESP-IDF
 #if defined(ESP_PLATFORM) || defined(__ESP32__)
-#include "driver/adc.h"
+#include "esp_adc/adc_oneshot.h"
 #endif
 
 #define PD_ADC_MAX_CHANNELS 16

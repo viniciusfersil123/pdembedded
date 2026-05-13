@@ -9,7 +9,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "drivers/uda1334a/uda1334a.h"
-#include "driver/adc.h"
 #include "per/adc.h"
 
 extern "C" void app_main(void)
@@ -21,9 +20,9 @@ extern "C" void app_main(void)
     const float min_freq = 50.0f;
     const float max_freq = 2000.0f;
 
-    // ADC setup using per/adc classes: GPIO35 is ADC1_CHANNEL_7
+    // ADC setup using per/adc classes: GPIO35 is ADC_CHANNEL_7
     AdcChannelConfig cfg;
-    cfg.InitEsp(1, ADC1_CHANNEL_7, ADC_ATTEN_DB_11);
+    cfg.InitEsp(1, ADC_CHANNEL_7, ADC_ATTEN_DB_12);
     AdcHandle adc;
     // increase oversampling to reduce noise and enable background polling
     adc.Init(&cfg, 1, AdcHandle::OVS_64);

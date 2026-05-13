@@ -1,15 +1,16 @@
 #include "per/adc.h"
 // Enable ESP32 ADC API usage when building for ESP-IDF
 #if defined(ESP_PLATFORM) || defined(__ESP32__)
-#include "driver/adc.h"
+#include "esp_adc/adc_oneshot.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_err.h"
+#include <string.h>
 #endif
 
 static void Error_Handler()
 {
-    asm("bkpt 255");
-    while(1) {}
+    for(;;) {}
 }
 
 // For ESP32 we use the ADC1 legacy functions for a simple, portable
@@ -25,6 +26,10 @@ struct dsy_adc
 };
 
 static dsy_adc adc;
+
+#if defined(ESP_PLATFORM) || defined(__ESP32__)
+static adc_oneshot_unit_handle_t g_adc1_handle = NULL;
+#endif
 
 #if defined(ESP_PLATFORM) || defined(__ESP32__)
 static void adc_poll_task(void* pv)
@@ -51,10 +56,12 @@ static void adc_poll_task(void* pv)
                     default: samples = 1; break;
                 }
                 uint32_t acc = 0;
-                for(int s = 0; s < samples; ++s)
-                {
-                    acc += (uint32_t)adc1_get_raw((adc1_channel_t)adc.pin_cfg[i].adc_channel_);
-                }
+                        for(int s = 0; s < samples; ++s)
+                        {
+                            int raw = 0;
+                            adc_oneshot_read(g_adc1_handle, (adc_channel_t)adc.pin_cfg[i].adc_channel_, &raw);
+                            acc += (uint32_t)raw;
+                        }
                 uint32_t avg = acc / (uint32_t)samples;
                 uint16_t scaled = (uint16_t)((avg * 65535u) / 4095u);
                 adc.last_read[i] = scaled;
@@ -94,19 +101,32 @@ void AdcHandle::Init(AdcChannelConfig* cfg, size_t num_channels, OverSampling ov
         adc.last_read[i] = 0;
 
 #if defined(ESP_PLATFORM) || defined(__ESP32__)
-    // Configure ADC1 width to 12-bit (common default)
-    adc_bits_width_t width = ADC_WIDTH_BIT_12;
-    adc1_config_width(width);
+    // Create/configure oneshot unit for ADC1 and configure channels
+    adc_oneshot_unit_init_cfg_t init_cfg;
+    memset(&init_cfg, 0, sizeof(init_cfg));
+    init_cfg.unit_id = ADC_UNIT_1;
+    init_cfg.ulp_mode = ADC_ULP_MODE_DISABLE;
+    if (g_adc1_handle == NULL)
+    {
+        if (adc_oneshot_new_unit(&init_cfg, &g_adc1_handle) != ESP_OK)
+        {
+            Error_Handler();
+        }
+    }
 
-    // Configure each channel provided
+    // Configure channels
     for(size_t i = 0; i < num_channels; i++)
     {
         adc.pin_cfg[i] = cfg[i];
         if(cfg[i].adc_channel_ >= 0 && cfg[i].adc_unit_ == 1)
         {
-            adc1_config_channel_atten((adc1_channel_t)cfg[i].adc_channel_, cfg[i].atten_);
+            adc_oneshot_chan_cfg_t ch_cfg;
+            memset(&ch_cfg, 0, sizeof(ch_cfg));
+            ch_cfg.bitwidth = ADC_BITWIDTH_DEFAULT;
+            ch_cfg.atten = (adc_atten_t)cfg[i].atten_;
+            adc_oneshot_config_channel(g_adc1_handle, (adc_channel_t)cfg[i].adc_channel_, &ch_cfg);
         }
-        // For adc_unit_ == 2, users will need to call adc2 APIs directly (not implemented here)
+        // ADC_UNIT_2 oneshot support is not implemented here
     }
 #else
     (void)cfg;
@@ -165,7 +185,9 @@ uint16_t AdcHandle::Get(uint8_t chn) const
         uint32_t acc = 0;
         for(int s = 0; s < samples; ++s)
         {
-            acc += (uint32_t)adc1_get_raw((adc1_channel_t)adc.pin_cfg[idx].adc_channel_);
+            int raw = 0;
+            adc_oneshot_read(g_adc1_handle, (adc_channel_t)adc.pin_cfg[idx].adc_channel_, &raw);
+            acc += (uint32_t)raw;
         }
         uint32_t avg = acc / (uint32_t)samples;
         uint16_t scaled = (uint16_t)((avg * 65535u) / 4095u);
